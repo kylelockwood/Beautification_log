@@ -1,0 +1,54 @@
+{
+    "beaut_log":{
+        "read_file" : true,
+        "path" : "Downloads",
+        "namekeyword" : "Beautification Daily Log",
+        "type" : ".csv",
+        "data_cols" : ["Date", "Location (cross streets)", "How many POUNDS of garbage collected? (number only)"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE"],
+        "data_index" : {
+            "date" : 0,
+            "weight" : 2,
+            "percentage" : 4,
+            "fill_col" : "None"
+        },
+        "clean_index" : [{"date" : 0}, {"weight" : 2}]
+    },
+    "metro_cost":{
+        "read_file" : true,
+        "path" : "Downloads",
+        "namekeyword" : "Metro Cost_Weight",
+        "type" : ".xlsx",
+        "data_cols" : ["Date", "Pounds", "Cost"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE"],
+        "data_index" : {
+            "date" : 0,
+            "weight" : 1,
+            "total" : 3,
+            "fill_col" : 3
+        },
+        "clean_index" : [{"date" : 0}]
+    },
+    "outfile" : {
+        "path" : "scriptpath",
+        "name" : "dataset",
+        "type" : ".csv",
+        "data_order" : ["beaut_log", "metro_cost"],
+        "match_index" : 0,
+        "openfile" : true
+    },
+    "convert":{
+        "to_lbs" : {
+            "lbs": 1,
+            "pound": 1,
+            "can": 40,
+            "garbage can": 40,
+            "bag": 40,
+            "pile": 40,
+            "ton" : 2000,
+            "couch" : 300,
+            "trailer" : 4000,
+            "mattress" : 100
+        },
+        "to_date" : ["%Y-%m-%d", "%m/%d/%Y"]
+        
+    }
+}
