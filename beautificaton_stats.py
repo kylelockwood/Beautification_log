@@ -1,6 +1,5 @@
 #! python3
 
-#from ast import Index
 import os, sys
 import re
 import json
@@ -10,112 +9,123 @@ import datetime
 from datetime import datetime as dt
 import csv
 import openpyxl
-#import pandas as pd
+import pandas as pd
+import matplotlib.pyplot as plt
+import requests
+#import curses
 
 class Beautification_Stats():
-    def __init__(self, param_file):
-        
+    def __init__(self, param_file, dataset=None):
         # The whole thing is wrapped in a try block for terminal error output purposes. Debugging will be caught and displayed if self.vars calls for it. Turn this on when the script is complete, as it will create less verbose error language.
 
-        #try:
-
+        # Store the Google Address Validation as an environmetental variable and not with the script
+        # Remember to restart the python environment when making changes to glbal variables
+        self.GoogleAPI = os.environ.get('GoogleAPI')
+        
         # Set variables
         self.scriptpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '\\'
         self.vars = self.load_json(param_file)
         self.dataset = {}
         data_sets = [] 
         
-        # Fill in data in self.vars
-        for key in self.vars:
-            try:
-                # Replace 'scriptpath' str in json with actual script path
-                if self.vars[key]['path'] == 'scriptpath':
-                    self.vars[key]['path'] = self.scriptpath
-
-                # Replace 'path' keyword with full path
-                self.vars[key]['path'] = self.return_paths(key)
-
-                # Add full file path of latest file matching key to ['file']
-                self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
-
-                # If the latest file is a zip file, get a list of the files within, extract them, and change the 'file' to the first file in the zip folder.
-                if (self.vars[key]['file']).endswith('.zip'):
-                    zfile = self.vars[key]['file']
-                    print(f'\nExtracting file(s) from .zip folder "{zfile}"... ', end='', flush=True)
-                    
-                    with zipfile.ZipFile(zfile, 'r') as zip_ref:
-                        zip_ref.extractall(self.vars[key]['path'])
-
-                        # Replace the .zip ['file'] with the first file in the zipped folder (could cause problems if there are multiple files in the zip folder)
-                        self.vars[key]['namekeyword'] = zip_ref.namelist()[0].split('.')[0]
-                        self.vars[key]['type'] = '.' + zip_ref.namelist()[0].split('.')[1]
-                        self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key) 
-                    print('Done')
-
-                # Add data to files that are "read_files"
-                if self.vars[key]['read_file']:
-                    # Add the creation date of the file to ['cdate']
-                    cdate = os.path.getctime(self.vars[key]['file'])
-                    cdate = dt.strptime(time.ctime(cdate),'%a %b %d %H:%M:%S %Y')
-                    self.vars[key]['cdate'] = dt.strftime(cdate, '%Y%m%d')
-                    
-                    # Add data to the key dependant on type
-                    if self.vars[key]['type'] == '.csv':
-                        self.vars[key]['data'] = self.get_csv_data(key)
-                        
-                    elif self.vars[key]['type'] == '.xlsx':
-                        self.vars[key]['data'] = self.get_xlsx_data(key)
-                    
-
-                # Create a list of tuples from 'clean_index' to tell self.sanitize what data to scrub
-                cleanlist = []
-                for clean in self.vars[key]['clean_index']:
-                    #print(clean)
-                    for k, v in clean.items():
-                        cleanlist.append((v, k))
-
-                # Sanitize the data as specified in the cleanlist
-                # TODO Sanitize addresses
-                self.sanitize(self.vars[key], cleanlist)
-                
-                # Create headers for output csv
-                headers = self.vars[key]['headers'] = [self.vars[key]['namekeyword'] + '_' + head for head in self.vars[key]['data_cols']]
-                #print(f'{headers=}')
-
-                # Totals and percentages for each date, and add appropriate headers
-                self.vars[key]['data'] = self.date_lbs_totals(self.vars[key], self.vars[key]['data_index']['weight']) 
-
-                # Add var names to list of datasets 
-                data_sets.append(key)
-
-            except KeyError:
-                continue
-
-            except PermissionError:
-                file = self.vars[key]['file']
-                sys.exit(input(f'\n\nError : Cannot access "{file}", it is likely open. Please close the file and try again.'))
-
-        # Create a new csv file combining the sanitized data from all files using parameters set in 
-        #sys.exit(f'{data_sets=}')
-
-        self.create_dataset(data_sets)
-
-        self.write_csv(self.dataset['headers'], self.dataset['data'], self.vars['outfile']['openfile'])
-
-
-        # TODO create readable output based on user parameters
+        # Check if dataset already exists in scriptpath
+        existing_dataset = self.find_latest_file(self.scriptpath, 'outfile')
         
+        if existing_dataset:
+            user_input = input(f'Existing dataset found : "{existing_dataset}", Would you like to load this data? (Y/N) ')
+            if user_input.lower() == 'y':              
+                self.vars['outfile']['file'] = existing_dataset
+                self.dataset['data'] = self.get_csv_data('outfile')
+                # Create ['headers'] from first row of data, then remove that row from ['data']
+                self.dataset['headers'] = [head for head in self.dataset['data'][0]]
+                self.dataset['data'].pop(0)
+            else:
+                existing_dataset = None    
 
-        # DEBUG
-        print(self.dataset['headers'])
-        for r in self.dataset['data']:
-            print(r)
+        # Start uploading datat to be sanitized. Fill in data in self.vars.
+        if not existing_dataset:
+            for key in self.vars:
+                try:
+                    # Replace 'scriptpath' str in json with actual script path
+                    if self.vars[key]['path'] == 'scriptpath':
+                        self.vars[key]['path'] = self.scriptpath
 
-        sys.exit()
+                    # Replace 'path' keyword with full path
+                    self.vars[key]['path'] = self.return_paths(key)
+
+                    # Add full file path of latest file matching key to ['file']
+                    self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
+
+                    # If the latest file is a zip file, get a list of the files within, extract them, and change the 'file' to the first file in the zip folder.
+                    if (self.vars[key]['file']).endswith('.zip'):
+                        zfile = self.vars[key]['file']
+                        print(f'\nExtracting file(s) from .zip folder "{zfile}"... ', end='', flush=True)
+                        
+                        # Note, Windows 10 extracts the file, while Windows 11 extracts the folder.
+                        # TODO This needs to account for all .zip behaviors
+                        # Workaround is to extract the file manually and change the variabels.json[key]['type'] to the file type instead of .zip
+                        with zipfile.ZipFile(zfile, 'r') as zip_ref:
+                            zip_ref.extractall(self.vars[key]['path'])
+                            self.vars[key]['type'] = '.' + zip_ref.namelist()[0].split('.')[-1]
+                            self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
+                        print('Done')
+
+                    # Add data to files that are "read_files"
+                    if self.vars[key]['read_file']:
+                        # Add the creation date of the file to ['cdate']
+                        cdate = os.path.getctime(self.vars[key]['file'])
+                        cdate = dt.strptime(time.ctime(cdate),'%a %b %d %H:%M:%S %Y')
+                        self.vars[key]['cdate'] = dt.strftime(cdate, '%Y%m%d')
+                        
+                        # Add data to the key dependant on type
+                        if self.vars[key]['type'] == '.csv':
+                            self.vars[key]['data'] = self.get_csv_data(key)
+                            
+                        elif self.vars[key]['type'] == '.xlsx':
+                            self.vars[key]['data'] = self.get_xlsx_data(key)
+
+                    # Create a list of tuples from 'clean_index' to tell self.sanitize what data to scrub
+                    cleanlist = []
+                    for clean in self.vars[key]['clean_index']:
+                        #print(clean)
+                        for k, v in clean.items():
+                            cleanlist.append((v, k))
+
+                    # Sanitize the data as specified in the cleanlist
+                    self.sanitize(self.vars[key], cleanlist) # TODO Sanitize addresses
+                    
+                    # Create headers for output csv
+                    headers = self.vars[key]['headers'] = [self.vars[key]['namekeyword'] + '_' + head for head in self.vars[key]['data_cols']]
+                    #print(f'{headers=}')
+
+                    # Totals and percentages for each date, and add appropriate headers
+                    self.vars[key]['data'] = self.date_lbs_totals(self.vars[key], self.vars[key]['data_index']['weight']) 
+
+                    # Add var names to list of datasets 
+                    data_sets.append(key)
+
+                except KeyError:
+                    continue
+
+                except PermissionError:
+                    file = self.vars[key]['file']
+                    sys.exit(input(f'\n\nError : Cannot access "{file}", it is likely open. Please close the file and try again.'))
+
+            # Create a new csv file combining the sanitized data from all files using parameters set in vars['outfile']          
+            self.create_dataset(data_sets)
+            
+            # Add city, state, zip to dataset. This had to be done after initial dataset creation for build purposes and can be fixed later if necessary.
+            self.parse_addresses(self.dataset, 2) # Index of addresses in dataset
+
+            # Write the sanatized dataset to a file, open it if ['outfile']['openfile'] is true
+            self.write_csv(self.dataset['headers'], self.dataset['data'], self.vars['outfile']['openfile'])
+
+        # Create readable output based on user parameters
+        Report(self.dataset, self.vars['report_options'])
+
+        # Used for terminal error display to make it more friendly in the end app
         #except Exception as e:
-        #    print(e)
-
-
+           # print(e)
 
     def load_json(self, filename):
         """Return data from JSON file as a dict"""
@@ -137,16 +147,19 @@ class Beautification_Stats():
     def find_latest_file(self, searchpath, key=None):
         """Return the most recent file matching search criteria"""
         searchfile = self.vars[key]["namekeyword"]
-        #print(f'{searchfile=}')
+        if '.' in searchfile:
+            searchfile = searchfile.split('.')[0]
         searchtype = self.vars[key]["type"]
         allfiles = os.listdir(searchpath)
-        #print(allfiles)
         matchfiles = [os.path.join(searchpath, basename) for basename in allfiles if basename.endswith(searchtype) and searchfile in basename]
         try:
             foundfile = max(matchfiles, key=os.path.getctime)
         except ValueError:
-            print(f'\n\nCould not find a {searchtype} file containing "{searchfile}" in folder "{searchpath}". Ensure that you have downloaded the correct file, or adjust variable.json search parameters.')
-            p = sys.exit(input())
+            if key == 'outfile':
+                return None
+            else:
+                print(f'\n\nCould not find a {searchtype} file containing "{searchfile}" in folder "{searchpath}". Ensure that you have downloaded the correct file, or adjust variable.json search parameters.')
+                p = sys.exit(input())
         return foundfile
 
     def get_csv_data(self, key):
@@ -169,7 +182,6 @@ class Beautification_Stats():
             for row in csvreader:
                 filtered_row = [row[idx] for idx in desired_indices]
                 filtered_data.append(filtered_row)
-            #print(filtered_data)
         print('Done')
         return filtered_data
             
@@ -199,12 +211,6 @@ class Beautification_Stats():
                     continue
 
         print('Done.')
-        #for s in all_sheets_data:
-        #    print(s)
-        #    for r in s:
-        #        print(r)
-        #sys.exit()
-        #print(all_sheets_data)
         return all_sheets_data
     
     def sanitize(self, key, cleanlist):        
@@ -213,29 +219,24 @@ class Beautification_Stats():
         Accepted sanitize type args are: 'date', 'weight', 'address', 'meals'
         """
         sanitizer_functions = {
-            'weight': self.weight_sanitize,
-            'address': self.address_sanitize,
-            'meals': self.meals_sanitize,
-            'date' : self.date_sanitize,
+            'Weight': self.weight_sanitize,
+            'Address': self.address_sanitize,
+            'Meals': self.meals_sanitize,
+            'Date' : self.date_sanitize,
         }
-
-        #print(cleanlist)
 
         for clean in cleanlist:
             data_index = clean[0]
             sanitizer_type = clean[1]
-
-            #print(f'{item=}  {sanitizer_type=}   {data_index=}')
 
             # Get the appropriate function based on the sanitizer_type
             sanitizer_function = sanitizer_functions.get(sanitizer_type)
 
             # Sanitize that data!
             if sanitizer_function:
-                print(f'\nSanitizing data... ', end='', flush=True)
-                print(sanitizer_type)
+                print(f'\n``` Sanitizing data :  ', end='', flush=True)
+                print(sanitizer_type + ' ```')
                 key['data'] = sanitizer_function(key['data'], data_index)
-                #print(key['data'])
             else:
                 print(f"No sanitizer function found for {sanitizer_type}")
 
@@ -320,13 +321,39 @@ class Beautification_Stats():
         #sys.exit()
         return(data)        
    
-    def address_sanitize(self, data, data_index):
-        print('address')
-        # TODO import data from slack?
-        raise NotImplementedError
-        
+    def address_sanitize(self, data, data_index, counter=1):
+        total = len(data)
+        for item in data:
+            print(f'Correcting addresses... {counter} of {total}', end='\r', flush=True)
+            address = item[data_index]
+            item[data_index] = self.check_address(address, counter)
+            # If check_address returns None remove the item
+            if not item[data_index]:
+                data.remove(item)
+            counter += 1
+        # City and state get added later. This is because I don't want to mess with the data order and I did addresses last because I had to wait for the Google API key to be approved.
+        return data
+
+    def check_address(self, address, counter, flag=False):
+        url = f'https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input={address}&inputtype=textquery&fields=formatted_address&key={self.GoogleAPI}'
+        response = requests.get(url)
+        json_data = response.json()
+        if json_data['status'] == 'OK':
+            return json_data['candidates'][0]['formatted_address']           
+        else:
+            if not flag:
+                address += ', Portland, OR' # Vast majority of addresses are in Portland. This is to help push the user data in the right direction and will fix most instances. However, it may cause some data inaccuracy and may need to be removed.
+                return self.check_address(address, counter, flag=True)
+
+            if flag:
+                user_input = input(f'\nDo not understand address "{address}", enter corrected address or press <ENTER> to remove from dataset : ')
+                if not user_input:
+                    print('\n  row removed from dataset')
+                    return None
+                else:
+                    return self.check_address(user_input, counter)
+
     def meals_sanitize(self, data, data_index):
-        print('meals')
         raise NotImplementedError
 
     def date_sanitize(self, data, data_index):
@@ -337,9 +364,7 @@ class Beautification_Stats():
         flag = False
         previous_date = None
         for item in data:
-            #input(f'{item=}   {data.index(item)=}')
             dte = item[data_index]
-            #print(f'{dte=}')
             # Replace None with previous_date if applicable
             if dte is None:
                 if previous_date is not None:
@@ -354,11 +379,9 @@ class Beautification_Stats():
             # Try to parse the string into a datetime object
             if isinstance(dte, str):
                 is_date = False
-                #print(f'{dte=}')
                 for fmt in self.vars['convert']['to_date']:
                     try:
                         date_obj = dt.strptime(dte, fmt)
-                        #pause = input(f'{date_obj=}')
                         is_date = True
                         if fmt == "%Y-%m-%d":
                             date_obj = date_obj.date()
@@ -366,8 +389,6 @@ class Beautification_Stats():
                         previous_date = date_obj
                         break
                     except ValueError:
-                       # print('val error')
-                       # print(f'{dte=}')
                         pass
                 if not is_date:
                     user_input = input(f'Found the string "{dte}" in date data, input a date in the following format MM/DD/YYYY, or press <ENTER> to delete : ')
@@ -427,10 +448,6 @@ class Beautification_Stats():
         if flag:
             data = self.date_sanitize(data, data_index)
 
-        #print(data)
-        #print(data[0])
-        #print(type(data[0][0]))
-        #sys.exit()
         return data
 
     def date_lbs_totals(self, key, data_index):
@@ -469,15 +486,12 @@ class Beautification_Stats():
             new_data.append(new_item)
         # Sort the list by date
         new_data.sort()
-        #for i in new_data:
-        #    print(i)
         print('Done.')
         return new_data
 
     def create_dataset(self, datasets):
         """
         Take two datasets, do math and return a combined dataset.
-        Index 0 DATE is for 
         """
         match_index = self.vars['outfile']['match_index']
         dset1 = datasets[0]
@@ -535,29 +549,16 @@ class Beautification_Stats():
                             previous_data2 = self.vars[dset2]['data'][row2-1][fill_index]
                         except IndexError:
                             previous_data2 = 0
-                        """
-                        print(f'{previous_data2=}')
-                        print(f'1111 {datarow=}')
-                        print(f'1111 {len(datarow)=})')
-                        """
                 
                     # Fill in 0 in all data cols if none exists for that date, except in the case fill_index = True
                     for i in range(1, len(datarow)):
                         if fill_index and i == fill_index:
-                            """
-                            print('\n1111 FILL INDEX = TRUE')
-                            print(f'{fill_index=}')
-                            print(f'{datarow[fill_index]=}')
-                            print(f'{drow=}')
-                            print(f'{datarow[fill_index]=}')
-                            """
                             drow.append(previous_data2)
                         else:
-                            drow.append(0)
+                            drow.append(0)                    
                     
                     row1 += 1
-                
-                
+
                 elif date2 == dte:
                     # Fill DATE in index 0
                     datarow = self.vars[dset2]['data'][row2]
@@ -574,15 +575,7 @@ class Beautification_Stats():
                     # Fill in 0 in all data cols if none exists for that date, except in the case fill_index = True
                     for i in range(1, len(datarow)):
                         if fill_index and i == fill_index:
-                            """                            
-                            print('\n2222 FILL INDEX = TRUE')
-                            print(f'{fill_index=}')
-                            print(f'{datarow[fill_index]=}')
-                            print(f'{drow=}')
-                            print(f'{datarow[fill_index]=}')
-                            """
-                            drow.appen(previous_data1)
-                    
+                            drow.appen(previous_data1)             
                         else:
                             drow.append(0)
                         
@@ -605,20 +598,11 @@ class Beautification_Stats():
             # x Total weight from dump receipts
             # output APPROX WEIGHT at each site based on receipts and not user guesses
             percentage = self.vars[dset1]['data_index']['percentage'] + 1
-            total = self.vars[dset2]['data_index']['total'] + len(self.vars[dset1]['data'][row1]) + 1
-            """
-            #print(f'{drow=}')
-            #print(f'INDEX    {percentage=}   {total=}')
-            #print(f'DATA     {drow[percentage]=}    {drow[total]=}')
-            #print(f'FINAL == {drow[percentage] * drow[total]}')
-            #print('\n')
-            #print(headers)
-            #print(drow)
-            #print('\n')
-            #pause = input()
-            """
-            
-            # 
+            try:
+                total = self.vars[dset2]['data_index']['total'] + len(self.vars[dset1]['data'][row1]) + 1
+            except IndexError:
+                continue
+
             drow.append(drow[percentage] * drow[total])
             dataset.append(drow)
         
@@ -626,11 +610,62 @@ class Beautification_Stats():
         self.dataset['data'] = dataset
         return
 
+    def parse_addresses(self, dataset, data_index):
+        print('\nCleaning up addresses... ', end='')
+        headers = ['CITY', 'STATE', 'ZIP']
+        for head in headers:
+            dataset['headers'].append(head)
+        state_abbreviations = {'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+                            'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+                            'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+                            'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+                            'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+                            'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+                            'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+                            'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+                            'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+                            'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+                            'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+                            'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+                                    'Wisconsin': 'WI', 'Wyoming': 'WY'}
+        for item in dataset['data']:
+            try:
+                address = item[data_index]
+                if address == 0:
+                    for i in range(3):
+                        item.append(0)
+                    continue
+                city = address.split(', ')[1]
+                statezip = address.split(', ')[2]
+                if ' ' in city: # in the case that no address, only city and statezip were given
+                    statezip = city
+                    city = address.split(', ')[0]
+                    # TODO this will mess things up if there is a multi-word city like Las Vegas
+
+                if ' ' in statezip:
+                    state = statezip.split(' ')[0]        
+                    zip_code = statezip.split(' ')[1]                
+                else:
+                    state = statezip                          
+                    zip_code = 0
+               
+                if state in state_abbreviations:
+                    state = state_abbreviations[state]
+                
+                item.append(city)
+                item.append(state)
+                item.append(zip_code)
+            except IndexError:
+                continue
+
+        print('Done.')
+        return dataset
+    
     def write_csv(self, headers, dataset, openfile=False):
-        # Write the dataset to a csv file
+        """Write the dataset to a csv file"""
         now = dt.now()
         timestamp = now.strftime('%m%d%Y_%H%M%S')
-        filename = self.vars['outfile']['name'] + '_' + str(timestamp) + self.vars['outfile']['type']
+        filename = self.vars['outfile']['namekeyword'] + '_' + str(timestamp) + self.vars['outfile']['type']
         outpath = self.vars['outfile']['path']
         print(f'{outpath=}  {filename=}')
         with open(outpath + filename, "w", newline="") as f:
@@ -642,10 +677,108 @@ class Beautification_Stats():
             os.startfile(outpath + filename)
 
 
-#data = pd.read_csv('example.csv')
-#print(data)
+class Report():
+    def __init__(self, dataset, params):
+        self.dataset = dataset
+        self.params = params
+        chart_title = self.params['title']
+        if self.params['date_range'] != 'all':
+            self.dataset['data'] = self.filter_data_by_date(self.dataset, self.params['date_range'])
+            chart_title += '\n\n' + self.params['date_range'][0] + ' to ' + self.params['date_range'][1]
+        chart_type = self.params['chart_type']
+        self.df = pd.DataFrame(self.dataset['data'], columns=self.dataset['headers'])
+
+        # Convert the 'sum_data' column items to a numerical data type
+        self.df[self.params['sum_data']] = pd.to_numeric(self.df[self.params['sum_data']], errors='coerce')
+
+        # Group the data by the 'group_data' column and calculate the sum of 'APPROX SITE WEIGHT'
+        grouped = self.df.groupby(self.params['group_data'])[self.params['sum_data']].sum()
+        grouped = grouped[grouped != 0]
+
+        # Calculate the total sum and percentages
+        total_sum = grouped.sum()
+        percentages = grouped / total_sum * 100
+        sums = grouped
+
+        # Define a custom autopct function that returns the percentage and the sum
+        def my_autopct(pct):
+            sum_value = int(round(pct/100 * total_sum))
+            if pct < 5:
+                return ''
+            else:
+                # TODO This should display the name of the item above the percentage on the chart. Currently does nothing
+                name_list = [name for name in grouped.index]
+                #print(f'{name_list=}')
+                name = ''
+                if len(name_list) > 0:
+                    name = '' # temp
+                return f'{name}\n{pct:.1f}%\n({sum_value:,}lbs)'
+
+        # Create a pie chart with a legend to the side
+        labels = [f'{name}' if percentages.loc[name] >= 5 else '' for name in grouped.index]
+        fig, ax = plt.subplots(figsize=(10,10))
+        wedges, texts, autotexts = ax.pie(grouped, labels=labels, autopct=my_autopct, startangle=90)
+        legend_items = [f"{name} ({percentages.loc[name]:.1f}% - {sums.loc[name]:,}lbs)" for name in grouped.index]
+        ax.legend(wedges, legend_items, title=self.params['group_data'], loc='center left', bbox_to_anchor=(1, 0.5), fancybox=True, shadow=True)
+        plt.setp(texts, size=10, weight='bold')
+        
+        # TODO Make this handle extra parameters for each type of chart
+        #else:
+        #    grouped.plot(kind=chart_type)        
+        plt.title(chart_title)
+        plt.show()
+    
+    def filter_data_by_date(self, dataset, date_filter, col_index=0):
+        """Filter a dataset by date range
+        Takes two string dates MM/DD/YYYY in a list
+        col_index is where to find the dates
+        """
+        filtered_data = []
+        dates = []
+        date_format = '%m/%d/%Y'
+        for date in date_filter:
+            dates.append(dt.strptime(date, date_format).date())
+        for row in dataset['data']:
+            check_date = dt.strptime(row[col_index], date_format).date()
+            if check_date >= dates[0] and check_date <= dates[1]:
+                filtered_data.append(row)
+        return filtered_data
+
+    def highlight_options(self, stdscr):
+        raise NotImplementedError
+        # Turn off cursor blinking
+        curses.curs_set(0)
+
+        # Define options
+        options = ['Option 1', 'Option 2', 'Option 3']
+        option_index = 0
+
+        while True:
+            # Clear screen
+            stdscr.clear()
+
+            # Display options
+            for i, option in enumerate(options):
+                if i == option_index:
+                    # Highlight the selected option
+                    stdscr.addstr(i, 0, option, curses.A_REVERSE)
+                else:
+                    stdscr.addstr(i, 0, option)
+
+            # Get user input
+            key = stdscr.getch()
+
+            # Handle user input
+            if key == curses.KEY_UP:
+                option_index = (option_index - 1) % len(options)
+            elif key == curses.KEY_DOWN:
+                option_index = (option_index + 1) % len(options)
+            elif key == curses.KEY_ENTER or key in [10, 13]:
+                # User selected an option
+                return option_index
+
+
+
 
 if __name__ == '__main__':
-    # TODO If dataset exists, ask user if they would like to load that instead, or start new
-    
     Beautification_Stats('variables.json')

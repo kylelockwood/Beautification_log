@@ -1,0 +1,7 @@
+{
+    "headers":["DATE", "Beautification Daily Log_Date", "Beautification Daily Log_Location (cross streets)", "Beautification Daily Log_How many POUNDS of garbage collected? (number only)", "Beautification Daily Log_Sum", "Beautification Daily Log_Percentage of total", "Metro Cost_Weight_Date", "Metro Cost_Weight_Pounds", "Metro Cost_Weight_Cost", "Metro Cost_Weight_Sum", "Metro Cost_Weight_Percentage of total",	"APPROX SITE WEIGHT"], 
+    "data" : [
+        [datetime.date(2022, 10, 6), datetime.date(2022, 10, 6), "12000 SE 82nd Ave Suite 1073, Portland, OR 97086, United States", 150, 150, 1.0, datetime.date(2022, 10, 6), 1740, 111.65, 3720, 0.47, 3720.0],
+        [datetime.date(2022, 10, 25), datetime.date(2022, 10, 25), "18080 SW Lower Boones Ferry Rd, Tigard, Oregon 97224, United States", 400, 400, 1.0, datetime.date(2022, 10, 25), 1960, 125.23, 9200, 0.21, 9200.0],
+        [datetime.date(2022, 10, 26), datetime.date(2022, 10, 26), "SE Morrison St, Portland, OR, USA", 300, 300, 1.0, datetime.date(2022, 10, 26), 2760, 174.61, 5980, 0.46, 5980.0]]
+}

@@ -4,36 +4,45 @@
         "path" : "Downloads",
         "namekeyword" : "Beautification Daily Log",
         "type" : ".csv",
-        "data_cols" : ["Date", "Location (cross streets)", "How many POUNDS of garbage collected? (number only)"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE"],
+        "data_cols" : ["Date", "Location (cross streets)", "How many POUNDS of garbage collected? (number only)"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE", "APPROX SITE WEIGHT", "CITY", "STATE", "ZIP"],
         "data_index" : {
             "date" : 0,
+            "address" : 1,
             "weight" : 2,
             "percentage" : 4,
             "fill_col" : "None"
         },
-        "clean_index" : [{"date" : 0}, {"weight" : 2}]
+        "clean_index" : [{"Date" : 0}, {"Address" : 1}, {"Weight" : 2}]
     },
     "metro_cost":{
         "read_file" : true,
         "path" : "Downloads",
         "namekeyword" : "Metro Cost_Weight",
         "type" : ".xlsx",
-        "data_cols" : ["Date", "Pounds", "Cost"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE"],
+        "data_cols" : ["Date", "Pounds", "Cost"], "COMMENT_ headers added in script" : ["SUM", "PERCENTAGE", "APPROX SITE WEIGHT", "CITY", "STATE", "ZIP"],
         "data_index" : {
             "date" : 0,
             "weight" : 1,
             "total" : 3,
             "fill_col" : 3
         },
-        "clean_index" : [{"date" : 0}]
+        "clean_index" : [{"Date" : 0}]
     },
     "outfile" : {
         "path" : "scriptpath",
-        "name" : "dataset",
+        "namekeyword" : "dataset",
         "type" : ".csv",
         "data_order" : ["beaut_log", "metro_cost"],
         "match_index" : 0,
-        "openfile" : true
+        "openfile" : false,
+        "data_cols" : ["DATE", "Beautification Daily Log_Date", "Beautification Daily Log_Location (cross streets)", "Beautification Daily Log_How many POUNDS of garbage collected? (number only)", "Beautification Daily Log_Sum", "Beautification Daily Log_Percentage of total", "Metro Cost_Weight_Date", "Metro Cost_Weight_Pounds", "Metro Cost_Weight_Cost", "Metro Cost_Weight_Sum", "Metro Cost_Weight_Percentage of total", "APPROX SITE WEIGHT", "CITY", "STATE", "ZIP"]
+    },
+    "report_options": {
+        "chart_type" : "pie",
+        "title" : "Total Weight by City",
+        "sum_data" : "APPROX SITE WEIGHT",
+        "group_data" : "CITY",
+        "date_range" : ["1/1/2023", "3/31/2023"]
     },
     "convert":{
         "to_lbs" : {
@@ -45,10 +54,9 @@
             "pile": 40,
             "ton" : 2000,
             "couch" : 300,
-            "trailer" : 4000,
+            "trailer" : 2600,
             "mattress" : 100
         },
-        "to_date" : ["%Y-%m-%d", "%m/%d/%Y"]
-        
+        "to_date" : ["%Y-%m-%d", "%m/%d/%Y"]  
     }
 }
