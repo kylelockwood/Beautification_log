@@ -12,114 +12,52 @@ import openpyxl
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
-#import curses
+import curses
+
+
 
 class Beautification_Stats():
-    def __init__(self, param_file, dataset=None):
-        # The whole thing is wrapped in a try block for terminal error output purposes. Debugging will be caught and displayed if self.vars calls for it. Turn this on when the script is complete, as it will create less verbose error language.
+    def __init__(self, param_file):
+        # TODO Can Google Address Validation return city state and zip separately when validating to avoid having to manually extract with unreliable .split() method?
+        # TODO Additive databse so you don't have to redo the whole dataset everytime, just the changes.
+        # TODO More and better error checking and reporting
+        # TODO Use curses to clean up interface, try to make this useable by most anyone
+        # TODO The whole thing is wrapped in a try block for terminal error output purposes. Debugging will be caught and displayed if self.vars calls for it. Turn this on when the script is complete, as it will create less verbose error language.
 
-        # Store the Google Address Validation as an environmetental variable and not with the script
-        # Remember to restart the python environment when making changes to glbal variables
+        # Store the Google Address Validation API token as an environmetental variable
+        # Remember to restart the python environment when making changes to global variables
         self.GoogleAPI = os.environ.get('GoogleAPI')
         
         # Set variables
         self.scriptpath = os.path.dirname(os.path.realpath(sys.argv[0])) + '\\'
         self.vars = self.load_json(param_file)
         self.dataset = {}
-        data_sets = [] 
         
         # Check if dataset already exists in scriptpath
         existing_dataset = self.find_latest_file(self.scriptpath, 'outfile')
         
+        options = ['New dataset']
+        title = None
         if existing_dataset:
-            user_input = input(f'Existing dataset found : "{existing_dataset}", Would you like to load this data? (Y/N) ')
-            if user_input.lower() == 'y':              
-                self.vars['outfile']['file'] = existing_dataset
-                self.dataset['data'] = self.get_csv_data('outfile')
-                # Create ['headers'] from first row of data, then remove that row from ['data']
-                self.dataset['headers'] = [head for head in self.dataset['data'][0]]
-                self.dataset['data'].pop(0)
-            else:
-                existing_dataset = None    
+            title = f'Existing dataset found : "{existing_dataset}"'
+            options.append('Import existing dataset') 
+            options.append('Update existing dataset')                        
+        options.append('Quit')
+    
+        user_input = highlight_options(options, curses.initscr(), title=title)
+        curses.endwin()
+        
+        os.system('cls')
 
-        # Start uploading datat to be sanitized. Fill in data in self.vars.
-        if not existing_dataset:
-            for key in self.vars:
-                try:
-                    # Replace 'scriptpath' str in json with actual script path
-                    if self.vars[key]['path'] == 'scriptpath':
-                        self.vars[key]['path'] = self.scriptpath
-
-                    # Replace 'path' keyword with full path
-                    self.vars[key]['path'] = self.return_paths(key)
-
-                    # Add full file path of latest file matching key to ['file']
-                    self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
-
-                    # If the latest file is a zip file, get a list of the files within, extract them, and change the 'file' to the first file in the zip folder.
-                    if (self.vars[key]['file']).endswith('.zip'):
-                        zfile = self.vars[key]['file']
-                        print(f'\nExtracting file(s) from .zip folder "{zfile}"... ', end='', flush=True)
-                        
-                        # Note, Windows 10 extracts the file, while Windows 11 extracts the folder.
-                        # TODO This needs to account for all .zip behaviors
-                        # Workaround is to extract the file manually and change the variabels.json[key]['type'] to the file type instead of .zip
-                        with zipfile.ZipFile(zfile, 'r') as zip_ref:
-                            zip_ref.extractall(self.vars[key]['path'])
-                            self.vars[key]['type'] = '.' + zip_ref.namelist()[0].split('.')[-1]
-                            self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
-                        print('Done')
-
-                    # Add data to files that are "read_files"
-                    if self.vars[key]['read_file']:
-                        # Add the creation date of the file to ['cdate']
-                        cdate = os.path.getctime(self.vars[key]['file'])
-                        cdate = dt.strptime(time.ctime(cdate),'%a %b %d %H:%M:%S %Y')
-                        self.vars[key]['cdate'] = dt.strftime(cdate, '%Y%m%d')
-                        
-                        # Add data to the key dependant on type
-                        if self.vars[key]['type'] == '.csv':
-                            self.vars[key]['data'] = self.get_csv_data(key)
-                            
-                        elif self.vars[key]['type'] == '.xlsx':
-                            self.vars[key]['data'] = self.get_xlsx_data(key)
-
-                    # Create a list of tuples from 'clean_index' to tell self.sanitize what data to scrub
-                    cleanlist = []
-                    for clean in self.vars[key]['clean_index']:
-                        #print(clean)
-                        for k, v in clean.items():
-                            cleanlist.append((v, k))
-
-                    # Sanitize the data as specified in the cleanlist
-                    self.sanitize(self.vars[key], cleanlist) # TODO Sanitize addresses
-                    
-                    # Create headers for output csv
-                    headers = self.vars[key]['headers'] = [self.vars[key]['namekeyword'] + '_' + head for head in self.vars[key]['data_cols']]
-                    #print(f'{headers=}')
-
-                    # Totals and percentages for each date, and add appropriate headers
-                    self.vars[key]['data'] = self.date_lbs_totals(self.vars[key], self.vars[key]['data_index']['weight']) 
-
-                    # Add var names to list of datasets 
-                    data_sets.append(key)
-
-                except KeyError:
-                    continue
-
-                except PermissionError:
-                    file = self.vars[key]['file']
-                    sys.exit(input(f'\n\nError : Cannot access "{file}", it is likely open. Please close the file and try again.'))
-
-            # Create a new csv file combining the sanitized data from all files using parameters set in vars['outfile']          
-            self.create_dataset(data_sets)
-            
-            # Add city, state, zip to dataset. This had to be done after initial dataset creation for build purposes and can be fixed later if necessary.
-            self.parse_addresses(self.dataset, 2) # Index of addresses in dataset
-
-            # Write the sanatized dataset to a file, open it if ['outfile']['openfile'] is true
-            self.write_csv(self.dataset['headers'], self.dataset['data'], self.vars['outfile']['openfile'])
-
+        if user_input == 0:
+            self.new_dataset()
+        elif user_input == 1:
+            self.import_dataset(existing_dataset)
+        elif user_input == 2:
+            self.update_dataset(existing_dataset)        
+        else:
+            sys.exit()  
+    
         # Create readable output based on user parameters
         Report(self.dataset, self.vars['report_options'])
 
@@ -161,6 +99,100 @@ class Beautification_Stats():
                 print(f'\n\nCould not find a {searchtype} file containing "{searchfile}" in folder "{searchpath}". Ensure that you have downloaded the correct file, or adjust variable.json search parameters.')
                 p = sys.exit(input())
         return foundfile
+
+    def new_dataset(self, date_range=None):
+        data_sets = [] 
+        
+        # TODO this should probably be broken out to return individual data sets for updating the existing dataset
+
+        for key in self.vars:
+            try:
+                # Replace 'scriptpath' str in json with actual script path
+                if self.vars[key]['path'] == 'scriptpath':
+                    self.vars[key]['path'] = self.scriptpath
+
+                # Replace 'path' keyword with full path
+                self.vars[key]['path'] = self.return_paths(key)
+
+                # Add full file path of latest file matching key to ['file']
+                self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
+
+                # If the latest file is a zip file, get a list of the files within, extract them, and change the 'file' to the first file in the zip folder.
+                if (self.vars[key]['file']).endswith('.zip'):
+                    zfile = self.vars[key]['file']
+                    print(f'\nExtracting file(s) from .zip folder "{zfile}"... ', end='', flush=True)
+                    
+                    # Note, Windows 10 extracts the file, while Windows 11 extracts the folder.
+                    # TODO This needs to account for all .zip behaviors
+                    # Workaround is to extract the file manually and change the variabels.json[key]['type'] to the file type instead of .zip
+                    with zipfile.ZipFile(zfile, 'r') as zip_ref:
+                        zip_ref.extractall(self.vars[key]['path'])
+                        self.vars[key]['type'] = '.' + zip_ref.namelist()[0].split('.')[-1]
+                        self.vars[key]['file'] = self.find_latest_file(self.vars[key]['path'], key)
+                    print('Done')
+
+                # Add data to files that are "read_files"
+                if self.vars[key]['read_file']:
+                    # Add the creation date of the file to ['cdate']
+                    cdate = os.path.getctime(self.vars[key]['file'])
+                    cdate = dt.strptime(time.ctime(cdate),'%a %b %d %H:%M:%S %Y')
+                    self.vars[key]['cdate'] = dt.strftime(cdate, '%Y%m%d')
+                    
+                    # Add data to the key dependant on type
+                    if self.vars[key]['type'] == '.csv':
+                        self.vars[key]['data'] = self.get_csv_data(key)
+                        
+                    elif self.vars[key]['type'] == '.xlsx':
+                        self.vars[key]['data'] = self.get_xlsx_data(key)
+
+                # Create a list of tuples from 'clean_index' to tell self.sanitize what data to scrub
+                cleanlist = []
+                for clean in self.vars[key]['clean_index']:
+                    #print(clean)
+                    for k, v in clean.items():
+                        cleanlist.append((v, k))
+
+                # Sanitize the data as specified in the cleanlist
+                self.sanitize(self.vars[key], cleanlist) # TODO Sanitize addresses
+                
+                # Create headers for output csv
+                headers = self.vars[key]['headers'] = [self.vars[key]['namekeyword'] + '_' + head for head in self.vars[key]['data_cols']]
+                #print(f'{headers=}')
+
+                # Totals and percentages for each date, and add appropriate headers
+                self.vars[key]['data'] = self.date_lbs_totals(self.vars[key], self.vars[key]['data_index']['weight']) 
+
+                # Add var names to list of datasets 
+                data_sets.append(key)
+
+            except KeyError:
+                continue
+
+            except PermissionError:
+                file = self.vars[key]['file']
+                sys.exit(input(f'\n\nError : Cannot access "{file}", it is likely open. Please close the file and try again.'))
+
+        # Create a new csv file combining the sanitized data from all files using parameters set in vars['outfile']          
+        self.create_dataset(data_sets)
+        
+        # Add city, state, zip to dataset. This had to be done after initial dataset creation for build purposes and can be fixed later if necessary.
+        self.parse_addresses(self.dataset, 2) # Index of addresses in dataset
+
+        # Write the sanatized dataset to a file, open it if ['outfile']['openfile'] is true
+        self.write_csv(self.dataset['headers'], self.dataset['data'], self.vars['outfile']['openfile'])
+
+    def import_dataset(self, existing_dataset):
+        self.vars['outfile']['file'] = existing_dataset
+        self.dataset['data'] = self.get_csv_data('outfile')
+        # Create ['headers'] from first row of data, then remove that row from ['data']
+        self.dataset['headers'] = [head for head in self.dataset['data'][0]]
+        self.dataset['data'].pop(0)
+
+    def update_dataset(self, existing_dataset):
+        # TODO Find the date range in the existing dataset
+        # TODO Start a new dataset only pulling data in a date_range start to now() or whatever
+        # TODO Write a new csv with this data (don't replace the old one)
+        raise NotImplementedError 
 
     def get_csv_data(self, key):
         filename = self.vars[key]['file']
@@ -352,6 +384,37 @@ class Beautification_Stats():
                     return None
                 else:
                     return self.check_address(user_input, counter)
+
+
+        """
+        # TODO This code (gpt gen) returns the components of the address rather than the entire address which will make for more accurate data
+        # Set the API endpoint and parameters
+        endpoint = 'https://maps.googleapis.com/maps/api/geocode/json'
+        params = {
+            'address': '123 SE Ash St. Portland, OR',
+            'key': 'YOUR_API_KEY'  # Replace with your own API key
+        }
+
+        # Send a GET request to the API endpoint and parse the response
+        response = requests.get(endpoint, params=params)
+        data = json.loads(response.text)
+
+        # Extract the street address, city, state, ZIP code, and county from the formatted address
+        formatted_address = data['results'][0]['formatted_address']
+        components = formatted_address.split(', ')
+        street_address = components[0]
+        city = next(c['long_name'] for c in data['results'][0]['address_components'] if 'locality' in c['types'])
+        state = next(c['short_name'] for c in data['results'][0]['address_components'] if 'administrative_area_level_1' in c['types'])
+        zip_code = next(c['long_name'] for c in data['results'][0]['address_components'] if 'postal_code' in c['types'])
+        county = next(c['long_name'] for c in data['results'][0]['address_components'] if 'administrative_area_level_2' in c['types'])
+
+        # Print the results
+        print('Street Address:', street_address)
+        print('City:', city)
+        print('State:', state)
+        print('ZIP Code:', zip_code)
+        print('County:', county)
+        """
 
     def meals_sanitize(self, data, data_index):
         raise NotImplementedError
@@ -612,6 +675,8 @@ class Beautification_Stats():
 
     def parse_addresses(self, dataset, data_index):
         print('\nCleaning up addresses... ', end='')
+        # TODO Google Address Validation has all of this data in it. Rework code to incorporate this
+        # TODO GAV also can return partial matches, perhaps user corrction prompt could include this as an option
         headers = ['CITY', 'STATE', 'ZIP']
         for head in headers:
             dataset['headers'].append(head)
@@ -630,6 +695,7 @@ class Beautification_Stats():
                                     'Wisconsin': 'WI', 'Wyoming': 'WY'}
         for item in dataset['data']:
             try:
+                # TODO Spagett use the GAV to get this
                 address = item[data_index]
                 if address == 0:
                     for i in range(3):
@@ -678,6 +744,7 @@ class Beautification_Stats():
 
 
 class Report():
+    # TODO Report options are in variables.json, might be good to put it in here at some point
     def __init__(self, dataset, params):
         self.dataset = dataset
         self.params = params
@@ -744,40 +811,42 @@ class Report():
                 filtered_data.append(row)
         return filtered_data
 
-    def highlight_options(self, stdscr):
-        raise NotImplementedError
-        # Turn off cursor blinking
-        curses.curs_set(0)
+def highlight_options(options, stdscr, title=None):
+    # Turn off cursor blinking
+    curses.curs_set(0)
 
-        # Define options
-        options = ['Option 1', 'Option 2', 'Option 3']
-        option_index = 0
+    # Define options
+    option_index = 0
 
-        while True:
-            # Clear screen
-            stdscr.clear()
+    while True:
+        # Clear screen
+        stdscr.clear()
+        stdscr.keypad(True)
+        
+        # Display title
+        if title:
+            stdscr.addstr(0, 0, title, curses.A_BOLD)
+            stdscr.addstr(1, 0, "-" * len(title))
 
-            # Display options
-            for i, option in enumerate(options):
-                if i == option_index:
-                    # Highlight the selected option
-                    stdscr.addstr(i, 0, option, curses.A_REVERSE)
-                else:
-                    stdscr.addstr(i, 0, option)
+        # Display options
+        for i, option in enumerate(options):
+            if i == option_index:
+                # Highlight the selected option
+                stdscr.addstr(i+2, 0, option, curses.A_REVERSE)
+            else:
+                stdscr.addstr(i+2, 0, option)
 
-            # Get user input
-            key = stdscr.getch()
-
-            # Handle user input
-            if key == curses.KEY_UP:
-                option_index = (option_index - 1) % len(options)
-            elif key == curses.KEY_DOWN:
-                option_index = (option_index + 1) % len(options)
-            elif key == curses.KEY_ENTER or key in [10, 13]:
-                # User selected an option
-                return option_index
-
-
+        # Get user input
+        key = stdscr.getch()
+        
+        # Handle user input
+        if key == curses.KEY_UP or key == 450:
+            option_index = (option_index - 1) % len(options)
+        elif key == curses.KEY_DOWN or key == 456:
+            option_index = (option_index + 1) % len(options)
+        elif key == curses.KEY_ENTER or key in [10, 13]:
+            # User selected an option
+            return option_index
 
 
 if __name__ == '__main__':
